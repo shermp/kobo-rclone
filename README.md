@@ -48,10 +48,6 @@ A binary called `krclone` will be copied to the current directory.
 ### Obtaining rclone
 Rclone is available as an ARM binary. Visit the download page https://rclone.org/downloads/ and download the Linux, ARM 32-bit distribution from the table.
 
-### Obtaining fbink
-Fbink is a small utility by NiLuJe to display stuff to the screen of a Kobo. You can download it from http://svn.ak-team.com/svn/Configs/trunk/Kindle/Kobo_Hacks/USBNetwork/src/usbnet/bin/fbink
-
-
 ### Installing on Kobo
 Currently, telnet or SSH access to a Kobo device is almost mandatory.
 
@@ -72,7 +68,7 @@ Obtain a dump of the touch event required to enable the USB connection. I did th
 ```
 Note that the filename of the above dump must match the model number of the Kobo you are using.
 
-Copy the `fbink`, `rclone` and `krclone` binaries to the `kobo-rclone` directory on the Kobo.
+Copy the `rclone` and `krclone` binaries to the `kobo-rclone` directory on the Kobo.
 
 Rclone require a configuration file. kobo-rclone is configured to use `rclone.conf` in the `kobo-rclone` directory. This file may be generated on the Kobo, or your development PC. To generate on the Kobo:
 ```
