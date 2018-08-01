@@ -44,6 +44,8 @@ const koboTouchInput = "/dev/input/event1"
 const koboDir = ".kobo/"
 const metaLFpath = ".adds/kobo-rclone/krmeta.lock"
 
+const krVersionString = "0.1.0"
+
 var koboModels = []string{"N867", "N709", "N236", "N587", "N437", "N250", "N514", "N204B", "N613", "N705", "N905", "N905B", "N905C"}
 
 type BookMetadata struct {
