@@ -45,6 +45,8 @@ go build path/to/kobo-rclone/krclone.go
 ```
 A binary called `krclone` will be copied to the current directory.
 
+Note that fbink is now included as a static library, and should now be included in the main binary after this step.
+
 ### Obtaining rclone
 Rclone is available as an ARM binary. Visit the download page https://rclone.org/downloads/ and download the Linux, ARM 32-bit distribution from the table.
 
@@ -97,3 +99,9 @@ Once this project has had further testing, bug fixing, and improvements, a binar
 This project is very much still a WORK IN PROGRESS. It could corrupt your Kobo database. It could corrupt your books/database partition. Be prepared to perform a factory reset if and when things go wrong.
 
 Use this software AT YOUR OWN RISK.
+
+## Further information.
+This project includes fbink by @NiLuJe, which is a tool to print stuff on eink screens.
+
+fbink is licensed under the AGPL3 license. It can be found at the following github repository:
+https://github.com/NiLuJe/FBInk
