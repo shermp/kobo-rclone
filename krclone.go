@@ -78,15 +78,6 @@ func logErrPrint(err error) {
 	}
 }
 
-// initFBink copies the fbink binary to a tmp directory, so it can be used
-// while /mnt/onboard is unavailable
-func initFBink() {
-	err := os.MkdirAll(krcloneTmpDir, os.ModeDir)
-	logErrPrint(err)
-	cpCmd := exec.Command("cp", filepath.Join(onboardMnt, krcloneDir, "fbink"), krcloneTmpDir)
-	cpCmd.Run()
-}
-
 // fbPrintCentred uses the fbink program to print text on the Kobo screen
 func fbPrintCentred(str string) {
 	var fbinkConfig C.FBInkConfig
@@ -265,7 +256,6 @@ func syncBooks(rcBin, rcConf, ksDir, koboVer string) {
 }
 
 func main() {
-	initFBink()
 	koboVers := getKoboVersion()
 	rcloneBin := filepath.Join(onboardMnt, krcloneDir, "rclone")
 	rcloneConfig := filepath.Join(onboardMnt, krcloneDir, "rclone.conf")
