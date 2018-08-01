@@ -34,7 +34,7 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 )
 
-// #cgo LDFLAGS: --static -L${SRCDIR}/lib -lfbink
+// #cgo LDFLAGS: -L${SRCDIR}/lib -lfbink
 // #include <stdlib.h>
 // #include "include/fbink.h"
 import "C"
