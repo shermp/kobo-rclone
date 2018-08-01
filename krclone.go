@@ -29,9 +29,15 @@ import (
 	"strings"
 	"syscall"
 	"time"
+	"unsafe"
 
 	_ "github.com/mattn/go-sqlite3"
 )
+
+// #cgo LDFLAGS: --static -L${SRCDIR}/lib -lfbink
+// #include <stdlib.h>
+// #include "include/fbink.h"
+import "C"
 
 const onboardMnt = "/mnt/onboard/"
 const tmpOnboardMnt = "/mnt/tmponboard/"
@@ -58,7 +64,7 @@ type BookMetadata struct {
 func chkErrFatal(err error, usrMsg string, msgDuration int) {
 	if err != nil {
 		if usrMsg != "" {
-			fbPrint(usrMsg, true)
+			fbPrintCentred(usrMsg)
 			time.Sleep(time.Duration(msgDuration) * time.Second)
 		}
 		log.Fatal(err)
@@ -81,18 +87,17 @@ func initFBink() {
 	cpCmd.Run()
 }
 
-// fbPrint uses the fbink program to print text on the Kobo screen
-func fbPrint(str string, centered bool) {
-	fbinkBin := filepath.Join(krcloneTmpDir, "fbink")
-	centArg := ""
-	if centered {
-		centArg = "-pm"
-	} else {
-		centArg = "-p"
-	}
-	cmd := exec.Command(fbinkBin, centArg, "-y", "4", str)
-	err := cmd.Run()
-	logErrPrint(err)
+// fbPrintCentred uses the fbink program to print text on the Kobo screen
+func fbPrintCentred(str string) {
+	var fbinkConfig C.FBInkConfig
+	fbinkConfig.row = 0
+	fbinkConfig.col = 4
+	fbinkConfig.is_centered = true
+	fbinkConfig.is_padded = true
+	C.fbink_init(-1, &fbinkConfig)
+	cStr := C.CString(str)
+	defer C.free(unsafe.Pointer(cStr))
+	C.fbink_print(-1, cStr, &fbinkConfig)
 }
 
 // getKoboVersion attempts to get the model number of the Kobo device
@@ -152,7 +157,7 @@ func nickelUSBconnTouch(koboVer string) {
 
 // updateMetadata attempts to update the metadata in the Nickel database
 func updateMetadata(koboVer string) {
-	fbPrint("Updating Metadata...", true)
+	fbPrintCentred("Updating Metadata...")
 	// Make sure we aren't in the directory we will be attempting to mount/unmount
 	os.Chdir("/")
 	os.Remove(filepath.Join(onboardMnt, metaLFpath))
@@ -160,7 +165,7 @@ func updateMetadata(koboVer string) {
 	calibreMDpath := filepath.Join(onboardMnt, krBookDir, ".metadata.calibre")
 	mdFile, err := os.OpenFile(calibreMDpath, os.O_RDONLY, 0666)
 	if err != nil {
-		fbPrint("Could not open Metadata File... Aborting!", true)
+		fbPrintCentred("Could not open Metadata File... Aborting!")
 		mdFile.Close()
 		return
 	}
@@ -184,7 +189,7 @@ func updateMetadata(koboVer string) {
 			koboDSN := "file:" + koboDBpath + "?cache=shared&mode=rw"
 			db, err := sql.Open("sqlite3", koboDSN)
 			if err != nil {
-				fbPrint(err.Error(), true)
+				fbPrintCentred(err.Error())
 				return
 			}
 			// Create a prepared statement we can reuse
@@ -195,24 +200,24 @@ func updateMetadata(koboVer string) {
 					path := meta.Lpath
 					series := meta.Series
 					seriesIndex := strconv.FormatFloat(meta.Series_index, 'f', -1, 64)
-					// Note, these fbPrint statements are for informational and debugging purposes
-					fbPrint(path, true)
+					// Note, these fbPrintCentred statements are for informational and debugging purposes
+					fbPrintCentred(path)
 					time.Sleep(250 * time.Millisecond)
-					fbPrint(series, true)
+					fbPrintCentred(series)
 					time.Sleep(250 * time.Millisecond)
-					fbPrint(seriesIndex, true)
+					fbPrintCentred(seriesIndex)
 					time.Sleep(250 * time.Millisecond)
 					if path != "" && series != "" && seriesIndex != "" {
 						_, err := stmt.Exec(series, seriesIndex, "%"+path)
 						if err != nil {
-							fbPrint("MD Error", true)
+							fbPrintCentred("MD Error")
 						} else {
-							fbPrint("MD Success", true)
+							fbPrintCentred("MD Success")
 						}
 					}
 				}
 			} else {
-				fbPrint(err.Error(), true)
+				fbPrintCentred(err.Error())
 			}
 			db.Close()
 			time.Sleep(3 * time.Second) // is this needed?
@@ -220,9 +225,9 @@ func updateMetadata(koboVer string) {
 			syscall.Unmount(tmpOnboardMnt, 0)
 			time.Sleep(3 * time.Second) // is this needed?
 			nickelUSBunplug()
-			fbPrint("Metadata updated!", true)
+			fbPrintCentred("Metadata updated!")
 		} else {
-			fbPrint(err.Error(), true)
+			fbPrintCentred(err.Error())
 		}
 
 	}
@@ -231,11 +236,11 @@ func updateMetadata(koboVer string) {
 // syncBooks runs the rclone program using the preconfigered configuration file.
 func syncBooks(rcBin, rcConf, ksDir, koboVer string) {
 	rcRemote := "krclone:"
-	fbPrint("Starting Sync... Please wait.", true)
+	fbPrintCentred("Starting Sync... Please wait.")
 	syncCmd := exec.Command(rcBin, "sync", rcRemote, ksDir, "--config", rcConf)
 	err := syncCmd.Run()
 	if err != nil {
-		fbPrint("Sync failed. Aborting!", true)
+		fbPrintCentred("Sync failed. Aborting!")
 		return
 	}
 	// Sync has succeeded. We need Nickel to process the new files, so we simulate
@@ -247,16 +252,16 @@ func syncBooks(rcBin, rcConf, ksDir, koboVer string) {
 			nickelUSBconnTouch(koboVer)
 		}
 		msg := fmt.Sprintf("Simulating USB. Disconnectiong in %d s...", i)
-		fbPrint(msg, true)
+		fbPrintCentred(msg)
 		time.Sleep(1 * time.Second)
 	}
 	nickelUSBunplug()
-	fbPrint("Done! Please rerun to update metadata.", true)
+	fbPrintCentred("Done! Please rerun to update metadata.")
 	time.Sleep(4 * time.Second)
 	// Create the lock file to inform our program to get the metadata on next run
 	f, _ := os.Create(filepath.Join(onboardMnt, metaLFpath))
 	defer f.Close()
-	fbPrint(" ", true)
+	fbPrintCentred(" ")
 }
 
 func main() {
