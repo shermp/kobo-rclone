@@ -49,10 +49,11 @@ const krVersionString = "0.1.0"
 
 var koboModels = []string{"N867", "N709", "N236", "N587", "N437", "N250", "N514", "N204B", "N613", "N705", "N905", "N905B", "N905C"}
 
+// BookMetadata is a struct to store data from a Calibre metadata JSON file
 type BookMetadata struct {
-	Lpath        string  `json:"lpath"`
-	Series       string  `json:"series"`
-	Series_index float64 `json:"series_index"`
+	Lpath       string  `json:"lpath"`
+	Series      string  `json:"series"`
+	SeriesIndex float64 `json:"series_index"`
 }
 
 // chkErrFatal prints a message to the Kobo screen, then exits the program
@@ -75,8 +76,10 @@ func logErrPrint(err error) {
 
 // fbPrintCentred uses the fbink program to print text on the Kobo screen
 func fbPrintCentred(str string) {
-	fbinkOpts := gofbink.FBInkConfig{4, 0, 0, 0, false, false, false, true, false, false, false, false}
-	err := gofbink.Print(-1, str, fbinkOpts)
+	var fbinkOpts gofbink.FBInkConfig
+	fbinkOpts.Row = 4
+	fbinkOpts.IsCentered = true
+	err := gofbink.Print(gofbink.FBFDauto, str, fbinkOpts)
 	logErrPrint(err)
 }
 
@@ -179,7 +182,7 @@ func updateMetadata(koboVer string) {
 					// Retrieve the values, and update the relevant records in the DB
 					path := meta.Lpath
 					series := meta.Series
-					seriesIndex := strconv.FormatFloat(meta.Series_index, 'f', -1, 64)
+					seriesIndex := strconv.FormatFloat(meta.SeriesIndex, 'f', -1, 64)
 					// Note, these fbPrintCentred statements are for informational and debugging purposes
 					fbPrintCentred(path)
 					time.Sleep(250 * time.Millisecond)
