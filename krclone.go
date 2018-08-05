@@ -76,7 +76,7 @@ func logErrPrint(err error) {
 // fbPrintCentred uses the fbink program to print text on the Kobo screen
 func fbPrintCentred(str string) {
 	fbinkOpts := gofbink.FBInkConfig{4, 0, 0, 0, false, false, false, true, false, false, false, false}
-	err := gofbink.FBinkPrint(-1, str, fbinkOpts)
+	err := gofbink.Print(-1, str, fbinkOpts)
 	logErrPrint(err)
 }
 
