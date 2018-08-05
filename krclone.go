@@ -29,15 +29,10 @@ import (
 	"strings"
 	"syscall"
 	"time"
-	"unsafe"
 
 	_ "github.com/mattn/go-sqlite3"
+	gofbink "github.com/shermp/go-fbink"
 )
-
-// #cgo LDFLAGS: -L${SRCDIR}/lib -lfbink
-// #include <stdlib.h>
-// #include "include/fbink.h"
-import "C"
 
 const onboardMnt = "/mnt/onboard/"
 const tmpOnboardMnt = "/mnt/tmponboard/"
@@ -80,15 +75,9 @@ func logErrPrint(err error) {
 
 // fbPrintCentred uses the fbink program to print text on the Kobo screen
 func fbPrintCentred(str string) {
-	var fbinkConfig C.FBInkConfig
-	fbinkConfig.row = 0
-	fbinkConfig.col = 4
-	fbinkConfig.is_centered = true
-	fbinkConfig.is_padded = true
-	C.fbink_init(-1, &fbinkConfig)
-	cStr := C.CString(str)
-	defer C.free(unsafe.Pointer(cStr))
-	C.fbink_print(-1, cStr, &fbinkConfig)
+	fbinkOpts := gofbink.FBInkConfig{4, 0, 0, 0, false, false, false, true, false, false, false, false}
+	err := gofbink.FBinkPrint(-1, str, fbinkOpts)
+	logErrPrint(err)
 }
 
 // getKoboVersion attempts to get the model number of the Kobo device
