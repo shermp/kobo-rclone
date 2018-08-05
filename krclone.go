@@ -48,6 +48,9 @@ const metaLFpath = ".adds/kobo-rclone/krmeta.lock"
 
 const krVersionString = "0.1.0"
 
+// This is easier as a global due to the way FBInk works
+var fbinkOpts gofbink.FBInkConfig
+
 // BookMetadata is a struct to store data from a Calibre metadata JSON file
 type BookMetadata struct {
 	Lpath       string  `json:"lpath"`
@@ -59,7 +62,7 @@ type BookMetadata struct {
 func chkErrFatal(err error, usrMsg string, msgDuration int) {
 	if err != nil {
 		if usrMsg != "" {
-			fbPrintCentred(usrMsg)
+			fbPrint(usrMsg)
 			time.Sleep(time.Duration(msgDuration) * time.Second)
 		}
 		log.Fatal(err)
@@ -73,11 +76,9 @@ func logErrPrint(err error) {
 	}
 }
 
-// fbPrintCentred uses the fbink program to print text on the Kobo screen
-func fbPrintCentred(str string) {
-	var fbinkOpts gofbink.FBInkConfig
+// fbPrint uses the fbink program to print text on the Kobo screen
+func fbPrint(str string) {
 	fbinkOpts.Row = 4
-	fbinkOpts.IsCentered = true
 	err := gofbink.Print(gofbink.FBFDauto, str, fbinkOpts)
 	logErrPrint(err)
 }
@@ -165,7 +166,7 @@ func fbButtonScan(pressButton bool, approxTimeout int) error {
 
 // updateMetadata attempts to update the metadata in the Nickel database
 func updateMetadata() {
-	fbPrintCentred("Updating Metadata...")
+	fbPrint("Updating Metadata...")
 	// Make sure we aren't in the directory we will be attempting to mount/unmount
 	os.Chdir("/")
 	os.Remove(filepath.Join(onboardMnt, metaLFpath))
@@ -173,7 +174,7 @@ func updateMetadata() {
 	calibreMDpath := filepath.Join(onboardMnt, krBookDir, ".metadata.calibre")
 	mdFile, err := os.OpenFile(calibreMDpath, os.O_RDONLY, 0666)
 	if err != nil {
-		fbPrintCentred("Could not open Metadata File... Aborting!")
+		fbPrint("Could not open Metadata File... Aborting!")
 		if mdFile != nil {
 			mdFile.Close()
 		}
@@ -191,7 +192,7 @@ func updateMetadata() {
 			time.Sleep(500 * time.Millisecond)
 			fbButtonScan(true, 0)
 		} else {
-			fbPrintCentred("Could not press connect button. Aborting!")
+			fbPrint("Could not press connect button. Aborting!")
 			return
 		}
 		// Wait for nickel to unmount the FS
@@ -207,7 +208,7 @@ func updateMetadata() {
 			koboDSN := "file:" + koboDBpath + "?cache=shared&mode=rw"
 			db, err := sql.Open("sqlite3", koboDSN)
 			if err != nil {
-				fbPrintCentred(err.Error())
+				fbPrint(err.Error())
 				return
 			}
 			// Create a prepared statement we can reuse
@@ -228,14 +229,14 @@ func updateMetadata() {
 					if path != "" && series != "" && seriesIndex != "" {
 						_, err := stmt.Exec(series, seriesIndex, "%"+path)
 						if err != nil {
-							fbPrintCentred("MD Error")
+							fbPrint("MD Error")
 						} else {
-							fbPrintCentred("MD Success")
+							fbPrint("MD Success")
 						}
 					}
 				}
 			} else {
-				fbPrintCentred(err.Error())
+				fbPrint(err.Error())
 			}
 			db.Close()
 			// We're done. Better unmount the filesystem before we return control to Nickel
@@ -244,9 +245,9 @@ func updateMetadata() {
 			err = waitForUnmount(10)
 			chkErrFatal(err, "The Filesystem did not unmount. Aborting!", 5)
 			nickelUSBunplug()
-			fbPrintCentred("Metadata updated!")
+			fbPrint("Metadata updated!")
 		} else {
-			fbPrintCentred(err.Error())
+			fbPrint(err.Error())
 		}
 
 	}
@@ -255,14 +256,14 @@ func updateMetadata() {
 // syncBooks runs the rclone program using the preconfigered configuration file.
 func syncBooks(rcBin, rcConf, ksDir string) {
 	rcRemote := "krclone:"
-	fbPrintCentred("Starting Sync... Please wait.")
+	fbPrint("Starting Sync... Please wait.")
 	syncCmd := exec.Command(rcBin, "sync", rcRemote, ksDir, "--config", rcConf)
 	err := syncCmd.Run()
 	if err != nil {
-		fbPrintCentred("Sync failed. Aborting!")
+		fbPrint("Sync failed. Aborting!")
 		return
 	}
-	fbPrintCentred("Simulating USB... Please wait.")
+	fbPrint("Simulating USB... Please wait.")
 	// Sync has succeeded. We need Nickel to process the new files, so we simulate
 	// a USB connection.
 	nickelUSBplug()
@@ -271,20 +272,24 @@ func syncBooks(rcBin, rcConf, ksDir string) {
 		time.Sleep(500 * time.Millisecond)
 		fbButtonScan(true, 0)
 	} else {
-		fbPrintCentred("Could not press connect button. Aborting!")
+		fbPrint("Could not press connect button. Aborting!")
 		return
 	}
 	time.Sleep(5 * time.Second)
 	nickelUSBunplug()
-	fbPrintCentred("Done! Please rerun to update metadata.")
+	fbPrint("Done! Please rerun to update metadata.")
 	waitForMount(30)
 	// Create the lock file to inform our program to get the metadata on next run
 	f, _ := os.Create(filepath.Join(onboardMnt, metaLFpath))
 	defer f.Close()
-	fbPrintCentred(" ")
+	fbPrint(" ")
 }
 
 func main() {
+	// Init FBInk before use
+	fbinkOpts.IsCentered = true
+	fbinkOpts.IsQuiet = true
+	gofbink.Init(gofbink.FBFDauto, fbinkOpts)
 	rcloneBin := filepath.Join(onboardMnt, krcloneDir, "rclone")
 	rcloneConfig := filepath.Join(onboardMnt, krcloneDir, "rclone.conf")
 	bookdir := filepath.Join(onboardMnt, krBookDir)
