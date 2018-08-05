@@ -19,7 +19,7 @@ package main
 import (
 	"database/sql"
 	"encoding/json"
-	"fmt"
+	"errors"
 	"io/ioutil"
 	"log"
 	"os"
@@ -30,6 +30,7 @@ import (
 	"syscall"
 	"time"
 
+	linuxproc "github.com/c9s/goprocinfo/linux"
 	_ "github.com/mattn/go-sqlite3"
 	gofbink "github.com/shermp/go-fbink"
 )
@@ -46,8 +47,6 @@ const koboDir = ".kobo/"
 const metaLFpath = ".adds/kobo-rclone/krmeta.lock"
 
 const krVersionString = "0.1.0"
-
-var koboModels = []string{"N867", "N709", "N236", "N587", "N437", "N250", "N514", "N204B", "N613", "N705", "N905", "N905B", "N905C"}
 
 // BookMetadata is a struct to store data from a Calibre metadata JSON file
 type BookMetadata struct {
@@ -83,23 +82,6 @@ func fbPrintCentred(str string) {
 	logErrPrint(err)
 }
 
-// getKoboVersion attempts to get the model number of the Kobo device
-// we are running on
-func getKoboVersion() string {
-	ret := ""
-	versPath := filepath.Join(onboardMnt, koboDir, "version")
-	text, err := ioutil.ReadFile(versPath)
-	chkErrFatal(err, "Couldn't get Kobo version. Aborting", 5)
-	verString := string(text)
-	for _, model := range koboModels {
-		if strings.HasPrefix(verString, model) {
-			ret = model
-			break
-		}
-	}
-	return ret
-}
-
 // metadataLockfileExists searches for the existance of a lock file
 func metadataLockfileExists() bool {
 	exists := true
@@ -123,23 +105,66 @@ func nickelUSBunplug() {
 	nickelPipe.Close()
 }
 
-// nickelUSBconnTouch simulates pressing the touch screen to 'press' the 'connect' button
+func internalMemUnmounted() bool {
+	mnts, err := linuxproc.ReadMounts("/proc/mounts")
+	chkErrFatal(err, "Mount status unavailable! Aborting.", 5)
+	for _, m := range mnts.Mounts {
+		if strings.Contains(m.Device, "mmcblk0p3") {
+			// Internal memory is mounted.
+			return false
+		}
+	}
+	return true
+}
+
+func waitForUnmount(approxTimeout int) error {
+	iterations := (approxTimeout * 1000) / 250
+	for i := 0; i < iterations; i++ {
+		time.Sleep(250 * time.Millisecond)
+		if internalMemUnmounted() {
+			return nil
+		}
+	}
+	return errors.New("internal memory did not unmount")
+}
+
+func waitForMount(approxTimeout int) error {
+	iterations := (approxTimeout * 1000) / 250
+	for i := 0; i < iterations; i++ {
+		time.Sleep(250 * time.Millisecond)
+		if !internalMemUnmounted() {
+			return nil
+		}
+	}
+	return errors.New("internal memory did not mount")
+}
+
+// fbButtonScan simulates pressing the touch screen to 'press' the 'connect' button
 // when 'plugging in' the usb cable.
 //
 // It replays events captured by /dev/input/event1, which are stored in a model specific
 // file.
-func nickelUSBconnTouch(koboVer string) {
-	touchFilePath := filepath.Join(onboardMnt, krcloneDir, "touchevents/usbconnect/", koboVer)
-	inFile, _ := os.OpenFile(touchFilePath, os.O_RDONLY, 0666)
-	touchEvent, _ := ioutil.ReadAll(inFile)
-	defer inFile.Close()
-	outFile, _ := os.OpenFile(koboTouchInput, os.O_WRONLY, os.ModeCharDevice)
-	outFile.Write(touchEvent)
-	defer outFile.Close()
+func fbButtonScan(pressButton bool, approxTimeout int) error {
+	if approxTimeout > 0 {
+		iterations := (approxTimeout * 1000) / 500
+		for i := 0; i < iterations; i++ {
+			err := gofbink.ButtonScan(gofbink.FBFDauto, pressButton)
+			if err == nil {
+				return nil
+			}
+			time.Sleep(500 * time.Millisecond)
+		}
+		return errors.New("button not found")
+	}
+	err := gofbink.ButtonScan(gofbink.FBFDauto, pressButton)
+	if err != nil {
+		return errors.New("button not found")
+	}
+	return nil
 }
 
 // updateMetadata attempts to update the metadata in the Nickel database
-func updateMetadata(koboVer string) {
+func updateMetadata() {
 	fbPrintCentred("Updating Metadata...")
 	// Make sure we aren't in the directory we will be attempting to mount/unmount
 	os.Chdir("/")
@@ -149,7 +174,9 @@ func updateMetadata(koboVer string) {
 	mdFile, err := os.OpenFile(calibreMDpath, os.O_RDONLY, 0666)
 	if err != nil {
 		fbPrintCentred("Could not open Metadata File... Aborting!")
-		mdFile.Close()
+		if mdFile != nil {
+			mdFile.Close()
+		}
 		return
 	}
 	mdJSON, _ := ioutil.ReadAll(mdFile)
@@ -159,13 +186,21 @@ func updateMetadata(koboVer string) {
 	// Process metadata if it exists
 	if len(metadata) > 0 {
 		nickelUSBplug()
-		time.Sleep(3 * time.Second)
-		nickelUSBconnTouch(koboVer)
-		time.Sleep(3 * time.Second)
+		err := fbButtonScan(false, 10)
+		if err == nil {
+			time.Sleep(500 * time.Millisecond)
+			fbButtonScan(true, 0)
+		} else {
+			fbPrintCentred("Could not press connect button. Aborting!")
+			return
+		}
+		// Wait for nickel to unmount the FS
+		err = waitForUnmount(10)
+		chkErrFatal(err, "The Filesystem did not unmount. Aborting!", 5)
 		os.MkdirAll(tmpOnboardMnt, 0666)
 		// 'Plugging' in the USB and 'connecting' causes Nickel to unmount /mnt/onboard...
 		// Let's be naughty and remount it elsewhere so we can access the DB without Nickel interfering
-		err := syscall.Mount(internalMemoryDev, tmpOnboardMnt, "vfat", 0, "")
+		err = syscall.Mount(internalMemoryDev, tmpOnboardMnt, "vfat", 0, "")
 		if err == nil {
 			// Attempt to open the DB
 			koboDBpath := filepath.Join(tmpOnboardMnt, koboDir, "KoboReader.sqlite")
@@ -184,12 +219,12 @@ func updateMetadata(koboVer string) {
 					series := meta.Series
 					seriesIndex := strconv.FormatFloat(meta.SeriesIndex, 'f', -1, 64)
 					// Note, these fbPrintCentred statements are for informational and debugging purposes
-					fbPrintCentred(path)
-					time.Sleep(250 * time.Millisecond)
-					fbPrintCentred(series)
-					time.Sleep(250 * time.Millisecond)
-					fbPrintCentred(seriesIndex)
-					time.Sleep(250 * time.Millisecond)
+					// fbPrintCentred(path)
+					// time.Sleep(250 * time.Millisecond)
+					// fbPrintCentred(series)
+					// time.Sleep(250 * time.Millisecond)
+					// fbPrintCentred(seriesIndex)
+					// time.Sleep(250 * time.Millisecond)
 					if path != "" && series != "" && seriesIndex != "" {
 						_, err := stmt.Exec(series, seriesIndex, "%"+path)
 						if err != nil {
@@ -203,10 +238,11 @@ func updateMetadata(koboVer string) {
 				fbPrintCentred(err.Error())
 			}
 			db.Close()
-			time.Sleep(3 * time.Second) // is this needed?
 			// We're done. Better unmount the filesystem before we return control to Nickel
 			syscall.Unmount(tmpOnboardMnt, 0)
-			time.Sleep(3 * time.Second) // is this needed?
+			// Make sure the FS is unmounted before returning control to Nickel
+			err = waitForUnmount(10)
+			chkErrFatal(err, "The Filesystem did not unmount. Aborting!", 5)
 			nickelUSBunplug()
 			fbPrintCentred("Metadata updated!")
 		} else {
@@ -217,7 +253,7 @@ func updateMetadata(koboVer string) {
 }
 
 // syncBooks runs the rclone program using the preconfigered configuration file.
-func syncBooks(rcBin, rcConf, ksDir, koboVer string) {
+func syncBooks(rcBin, rcConf, ksDir string) {
 	rcRemote := "krclone:"
 	fbPrintCentred("Starting Sync... Please wait.")
 	syncCmd := exec.Command(rcBin, "sync", rcRemote, ksDir, "--config", rcConf)
@@ -226,21 +262,22 @@ func syncBooks(rcBin, rcConf, ksDir, koboVer string) {
 		fbPrintCentred("Sync failed. Aborting!")
 		return
 	}
+	fbPrintCentred("Simulating USB... Please wait.")
 	// Sync has succeeded. We need Nickel to process the new files, so we simulate
 	// a USB connection.
 	nickelUSBplug()
-	// Simulate the connection and disconnection over 12 seconds, to give Nickel some time...
-	for i := 12; i > 0; i-- {
-		if i == 8 {
-			nickelUSBconnTouch(koboVer)
-		}
-		msg := fmt.Sprintf("Simulating USB. Disconnectiong in %d s...", i)
-		fbPrintCentred(msg)
-		time.Sleep(1 * time.Second)
+	err = fbButtonScan(false, 10)
+	if err == nil {
+		time.Sleep(500 * time.Millisecond)
+		fbButtonScan(true, 0)
+	} else {
+		fbPrintCentred("Could not press connect button. Aborting!")
+		return
 	}
+	time.Sleep(5 * time.Second)
 	nickelUSBunplug()
 	fbPrintCentred("Done! Please rerun to update metadata.")
-	time.Sleep(4 * time.Second)
+	waitForMount(30)
 	// Create the lock file to inform our program to get the metadata on next run
 	f, _ := os.Create(filepath.Join(onboardMnt, metaLFpath))
 	defer f.Close()
@@ -248,14 +285,13 @@ func syncBooks(rcBin, rcConf, ksDir, koboVer string) {
 }
 
 func main() {
-	koboVers := getKoboVersion()
 	rcloneBin := filepath.Join(onboardMnt, krcloneDir, "rclone")
 	rcloneConfig := filepath.Join(onboardMnt, krcloneDir, "rclone.conf")
 	bookdir := filepath.Join(onboardMnt, krBookDir)
 	if metadataLockfileExists() {
-		updateMetadata(koboVers)
+		updateMetadata()
 
 	} else {
-		syncBooks(rcloneBin, rcloneConfig, bookdir, koboVers)
+		syncBooks(rcloneBin, rcloneConfig, bookdir)
 	}
 }
