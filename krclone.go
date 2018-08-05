@@ -56,6 +56,7 @@ type BookMetadata struct {
 	Lpath       string  `json:"lpath"`
 	Series      string  `json:"series"`
 	SeriesIndex float64 `json:"series_index"`
+	Comments    string  `json:"comments"`
 }
 
 // chkErrFatal prints a message to the Kobo screen, then exits the program
@@ -212,22 +213,17 @@ func updateMetadata() {
 				return
 			}
 			// Create a prepared statement we can reuse
-			stmt, err := db.Prepare("UPDATE content SET Series=?, SeriesNumber=? WHERE ContentID LIKE ?")
+			stmt, err := db.Prepare("UPDATE content SET Description=?, Series=?, SeriesNumber=? WHERE ContentID LIKE ?")
 			if err == nil {
 				for _, meta := range metadata {
 					// Retrieve the values, and update the relevant records in the DB
 					path := meta.Lpath
 					series := meta.Series
 					seriesIndex := strconv.FormatFloat(meta.SeriesIndex, 'f', -1, 64)
-					// Note, these fbPrintCentred statements are for informational and debugging purposes
-					// fbPrintCentred(path)
-					// time.Sleep(250 * time.Millisecond)
-					// fbPrintCentred(series)
-					// time.Sleep(250 * time.Millisecond)
-					// fbPrintCentred(seriesIndex)
-					// time.Sleep(250 * time.Millisecond)
-					if path != "" && series != "" && seriesIndex != "" {
-						_, err := stmt.Exec(series, seriesIndex, "%"+path)
+					description := meta.Comments
+
+					if path != "" {
+						_, err := stmt.Exec(description, series, seriesIndex, "%"+path)
 						if err != nil {
 							fbPrint("MD Error")
 						} else {
