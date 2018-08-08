@@ -148,12 +148,14 @@ func waitForMount(approxTimeout int) error {
 // file.
 func fbButtonScan(pressButton bool) error {
 	err := gofbink.ButtonScan(gofbink.FBFDauto, pressButton, false)
-	if strings.Compare(err.Error(), "EXIT_FAILURE") == 0 {
-		return errors.New("button not found")
-	} else if strings.Compare(err.Error(), "ENOTSUP") == 0 {
-		return errors.New("button press failure")
-	} else if strings.Compare(err.Error(), "ENODEV") == 0 {
-		return errors.New("touch event failure")
+	if err != nil {
+		if strings.Compare(err.Error(), "EXIT_FAILURE") == 0 {
+			return errors.New("button not found")
+		} else if strings.Compare(err.Error(), "ENOTSUP") == 0 {
+			return errors.New("button press failure")
+		} else if strings.Compare(err.Error(), "ENODEV") == 0 {
+			return errors.New("touch event failure")
+		}
 	}
 	return nil
 }
