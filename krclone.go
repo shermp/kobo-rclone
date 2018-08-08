@@ -44,7 +44,7 @@ const nickelHWstatusPipe = "/tmp/nickel-hardware-status"
 const koboDir = ".kobo/"
 const metaLFpath = ".adds/kobo-rclone/krmeta.lock"
 
-const krVersionString = "0.1.0"
+const krVersionString = "0.2.0"
 
 // This is easier as a global due to the way FBInk works
 var fbinkOpts gofbink.FBInkConfig
