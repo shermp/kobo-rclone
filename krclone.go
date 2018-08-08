@@ -146,21 +146,14 @@ func waitForMount(approxTimeout int) error {
 //
 // It replays events captured by /dev/input/event1, which are stored in a model specific
 // file.
-func fbButtonScan(pressButton bool, approxTimeout int) error {
-	if approxTimeout > 0 {
-		iterations := (approxTimeout * 1000) / 500
-		for i := 0; i < iterations; i++ {
-			err := gofbink.ButtonScan(gofbink.FBFDauto, pressButton)
-			if err == nil {
-				return nil
-			}
-			time.Sleep(500 * time.Millisecond)
-		}
+func fbButtonScan(pressButton bool) error {
+	err := gofbink.ButtonScan(gofbink.FBFDauto, pressButton, false)
+	if strings.Compare(err.Error(), "EXIT_FAILURE") == 0 {
 		return errors.New("button not found")
-	}
-	err := gofbink.ButtonScan(gofbink.FBFDauto, pressButton)
-	if err != nil {
-		return errors.New("button not found")
+	} else if strings.Compare(err.Error(), "ENOTSUP") == 0 {
+		return errors.New("button press failure")
+	} else if strings.Compare(err.Error(), "ENODEV") == 0 {
+		return errors.New("touch event failure")
 	}
 	return nil
 }
@@ -188,13 +181,17 @@ func updateMetadata() {
 	// Process metadata if it exists
 	if len(metadata) > 0 {
 		nickelUSBplug()
-		err := fbButtonScan(false, 10)
-		if err == nil {
+		for i := 0; i < 10; i++ {
+			err = fbButtonScan(true)
+			if i == 9 && err != nil {
+				fbPrint("Could not press connect button. Aborting!")
+				logErrPrint(err)
+				return
+			}
+			if err == nil {
+				break
+			}
 			time.Sleep(500 * time.Millisecond)
-			fbButtonScan(true, 0)
-		} else {
-			fbPrint("Could not press connect button. Aborting!")
-			return
 		}
 		// Wait for nickel to unmount the FS
 		err = waitForUnmount(10)
@@ -263,13 +260,17 @@ func syncBooks(rcBin, rcConf, ksDir string) {
 	// Sync has succeeded. We need Nickel to process the new files, so we simulate
 	// a USB connection.
 	nickelUSBplug()
-	err = fbButtonScan(false, 10)
-	if err == nil {
+	for i := 0; i < 10; i++ {
+		err = fbButtonScan(true)
+		if i == 9 && err != nil {
+			fbPrint("Could not press connect button. Aborting!")
+			logErrPrint(err)
+			return
+		}
+		if err == nil {
+			break
+		}
 		time.Sleep(500 * time.Millisecond)
-		fbButtonScan(true, 0)
-	} else {
-		fbPrint("Could not press connect button. Aborting!")
-		return
 	}
 	time.Sleep(5 * time.Second)
 	nickelUSBunplug()
@@ -284,7 +285,7 @@ func syncBooks(rcBin, rcConf, ksDir string) {
 func main() {
 	// Init FBInk before use
 	fbinkOpts.IsCentered = true
-	fbinkOpts.IsQuiet = true
+	// fbinkOpts.IsQuiet = true
 	gofbink.Init(gofbink.FBFDauto, fbinkOpts)
 	rcloneBin := filepath.Join(onboardMnt, krcloneDir, "rclone")
 	rcloneConfig := filepath.Join(onboardMnt, krcloneDir, "rclone.conf")
