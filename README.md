@@ -9,6 +9,15 @@ It is a CLI program to sync files from a large number of different 'cloud' backe
 ## And kobo-rclone?
 kobo-rclone is both a wrapper for the rclone binary to sync ebooks onto a Kobo ereader wirelessly, and a metadata parser/updater, when used in conjunction with Calibre's "Connect to folder" feature. More specifically, kobo-rclone can currently add series information to book entries after a sync.
 
+## Changelog
+**0.2.0**
+* Now integrates FBInk as a static library in the binary. No need to download it separately now. Instead, a wrapper called go-fbink has been created.
+* Uses the newly created `fbink_button_scan()` function to detect the Nickel USB connect screen. Additionally, it also handles pressing the button automatically as well. Dumping your own touch event is no longer necessary.
+* Safety checks added to ensure filesystem mounts/unmounts occur as they should.
+
+**0.1.0**
+* Initial release
+
 ## Installing
 kobo-rclone is NOT yet suitable for everyday use, therefore no binaries are available at this point. Installing from source is as follows:
 
@@ -21,6 +30,11 @@ kobo-rclone uses the `go-sqlite3` package to interface with the Kobo DB. Unfortu
 go get github.com/mattn/go-sqlite3
 ```
 You will need an ARM GCC cross compiler available to build kobo-rclone correctly with `go-sqlite3`. `gcc-linaro-arm-linux-gnueabihf-4.8-2013.04-20130417` has been used successfully. Extract it to a directory of your choosing, and set the `CC` and `CXX` environment variables to `path/to/gcc` and `path/to/g++` respectively.
+
+kobo-rclone now uses a wrapper called `go-fbink` to use FBInk. Install it with:
+```
+go get github.com/shermp/go-fbink
+```
 
 ### Obtain kobo-rclone
 kobo-rclone can be downloaded using `go get`
@@ -47,6 +61,8 @@ A binary called `krclone` will be copied to the current directory.
 
 Note that fbink is now included as a static library, and should now be included in the main binary after this step.
 
+You may also wish to strip the binary using `path/to/toolchain/toolchain-strip krclone`, where toolchain is the name of your chosen cross compiler.
+
 ### Obtaining rclone
 Rclone is available as an ARM binary. Visit the download page https://rclone.org/downloads/ and download the Linux, ARM 32-bit distribution from the table.
 
@@ -54,21 +70,6 @@ Rclone is available as an ARM binary. Visit the download page https://rclone.org
 Currently, telnet or SSH access to a Kobo device is almost mandatory.
 
 On the main memory of your Kobo (`/mnt/onboard`), create the directory `.adds/kobo-rclone`
-
-In the `kobo-rclone` directory, create the subdirectory `touchevents/usbconnect`
-
-Obtain a dump of the touch event required to enable the USB connection. I did the following (for my Aura H2O, model number N250):
-```
-# cd /
-# usb plug add >> /tmp/nickel-hardware-status
-# cat /dev/input/event1 > /N250
-
-// tap the connect button on-screen, then Ctrl-C to exit 'cat'
-
-# usb plug remove >> /tmp/nickel-hardware-status
-# mv /N250 /mnt/onboard/.adds/kobo-rclone/touchevents/usbconnect/N250
-```
-Note that the filename of the above dump must match the model number of the Kobo you are using.
 
 Copy the `rclone` and `krclone` binaries to the `kobo-rclone` directory on the Kobo.
 
