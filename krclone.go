@@ -31,6 +31,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/BurntSushi/toml"
 	linuxproc "github.com/c9s/goprocinfo/linux"
 	_ "github.com/mattn/go-sqlite3"
 	gofbink "github.com/shermp/go-fbink"
@@ -62,10 +63,10 @@ type BookMetadata struct {
 
 // KRcloneConfig is a struct to store the kobo-rclone configuration options
 type KRcloneConfig struct {
-	KRbookDir    string `json:"krclone_book_dir"`
-	RcloneCfg    string `json:"rclone_config"`
-	RCremoteName string `json:"rclone_remote_name"`
-	RCrootDir    string `json:"rclone_root_dir"`
+	KRbookDir    string `toml:"krclone_book_dir"`
+	RcloneCfg    string `toml:"rclone_config"`
+	RCremoteName string `toml:"rclone_remote_name"`
+	RCrootDir    string `toml:"rclone_root_dir"`
 }
 
 // chkErrFatal prints a message to the Kobo screen, then exits the program
@@ -324,24 +325,13 @@ func main() {
 	krcloneDir, _ = filepath.Split(krcloneDir)
 	log.Printf(krcloneDir)
 
-	// Read Config file. JSON is used to keep our binary size
-	// under control, as we don't need extra packages.
-	// Note to self: Viper is a really cool package for setting/getting
-	// configuration items. It is also huge, and approx doubles our final
-	// binary size :(
-	krCfgPath := filepath.Join(krcloneDir, "krclone-cfg.json")
-	cfgFile, err := os.OpenFile(krCfgPath, os.O_RDONLY, 0666)
-	if err != nil {
-		fbPrint("Could not open Config File... Aborting!")
-		if cfgFile != nil {
-			cfgFile.Close()
-		}
-		return
-	}
-	cfgJSON, _ := ioutil.ReadAll(cfgFile)
-	cfgFile.Close()
+	// Read Config file. TOML is used here. Binary size tradeoff not too bad
+	// here.
+	krCfgPath := filepath.Join(krcloneDir, "krclone-cfg.toml")
 	var krCfg KRcloneConfig
-	json.Unmarshal(cfgJSON, &krCfg)
+	if _, err := toml.DecodeFile(krCfgPath, &krCfg); err != nil {
+		chkErrFatal(err, "Couldn't read config. Aborting!", 5)
+	}
 
 	// Run kobo-rclone with our configured settings
 	rcloneBin := filepath.Join(krcloneDir, "rclone")

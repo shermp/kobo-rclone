@@ -1,0 +1,12 @@
+# The directory to sync book to. Path is realative to the 
+# root of the user accessable internal memory
+krclone_book_dir = "krclone-books"
+# The name/path of the rclone config path. This path is relative
+# to the kobo-rclone directory.
+rclone_config = "rclone.conf"
+# The rclone remote name to sync to. This is the name used when
+# setting up the rclone config file.
+rclone_remote_name = "krclone"
+# The remote directory to sync to. May be blank to sync to the
+# root directory of your remote storage.
+rclone_root_dir = ""

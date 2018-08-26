@@ -1,6 +1,0 @@
-{
-    "krclone_book_dir": "krclone-books",
-    "rclone_config": "rclone.conf",
-    "rclone_remote_name": "krclone",
-    "rclone_root_dir": ""
-}
