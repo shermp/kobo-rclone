@@ -94,6 +94,7 @@ func fbPrint(str string) {
 		fbMsgBuffer.Remove(elt)
 	}
 	fbMsgBuffer.PushBack(str)
+	fbinkOpts.Col = 1
 	row := int16(4)
 	for m := fbMsgBuffer.Front(); m != nil; m = m.Next() {
 		fbinkOpts.Row = row
@@ -186,7 +187,6 @@ func fbButtonScan(pressButton bool) error {
 
 // updateMetadata attempts to update the metadata in the Nickel database
 func updateMetadata(ksDir, krcloneDir string) {
-	fbPrint("Updating Metadata...")
 	// Make sure we aren't in the directory we will be attempting to mount/unmount
 	os.Chdir("/")
 	os.Remove(filepath.Join(krcloneDir, metaLockFile))
@@ -206,6 +206,7 @@ func updateMetadata(ksDir, krcloneDir string) {
 	json.Unmarshal(mdJSON, &metadata)
 	// Process metadata if it exists
 	if len(metadata) > 0 {
+		fbPrint("Updating Metadata...")
 		nickelUSBplug()
 		for i := 0; i < 10; i++ {
 			err = fbButtonScan(true)
@@ -269,6 +270,8 @@ func updateMetadata(ksDir, krcloneDir string) {
 			fbPrint(err.Error())
 		}
 
+	} else {
+		fbPrint("No metadata to update!")
 	}
 }
 
