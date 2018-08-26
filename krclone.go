@@ -88,18 +88,21 @@ func logErrPrint(err error) {
 
 // fbPrint uses the fbink program to print text on the Kobo screen
 func fbPrint(str string) {
-	strBuff := ""
 	if fbMsgBuffer.Len() >= 5 {
 		elt := fbMsgBuffer.Front()
 		fbMsgBuffer.Remove(elt)
 	}
 	fbMsgBuffer.PushBack(str)
+	row := int16(4)
 	for m := fbMsgBuffer.Front(); m != nil; m = m.Next() {
-		strBuff += m.Value.(string) + "\n"
+		fbinkOpts.Row = row
+		rowsPrinted, err := gofbink.Print(gofbink.FBFDauto, m.Value.(string), fbinkOpts)
+		if err == nil {
+			row += int16(rowsPrinted)
+		} else {
+			logErrPrint(err)
+		}
 	}
-	fbinkOpts.Row = 4
-	err := gofbink.Print(gofbink.FBFDauto, strBuff, fbinkOpts)
-	logErrPrint(err)
 }
 
 // metadataLockfileExists searches for the existance of a lock file
