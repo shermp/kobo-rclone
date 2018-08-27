@@ -21,6 +21,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io/ioutil"
 	"log"
 	"os"
@@ -289,17 +290,22 @@ func syncBooks(rcBin, rcConf, rcRemote, ksDir, krcloneDir string) {
 	}
 	fbPrint("Simulating USB... Please wait.")
 	// Sync has succeeded. We need Nickel to process the new files, so we simulate
-	// a USB connection.
+	// a USB connection. It turns out, 5 seconds may not be nearly long enough. Now
+	// set to approx 60 sec
 	nickelUSBplug()
-	for i := 0; i < 10; i++ {
+	for i := 0; i < 120; i++ {
 		err = fbButtonScan(true)
-		if i == 9 && err != nil {
+		if i == 119 && err != nil {
 			fbPrint(err.Error())
 			logErrPrint(err)
 			return
 		}
 		if err == nil {
 			break
+		}
+		if i%2 == 0 {
+			msg := fmt.Sprintf("We've been waiting for %d iterations", i)
+			fbPrint(msg)
 		}
 		time.Sleep(500 * time.Millisecond)
 	}
