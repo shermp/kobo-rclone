@@ -39,7 +39,7 @@ go get github.com/shermp/go-fbink
 ### Obtain kobo-rclone
 kobo-rclone can be downloaded using `go get`
 ```
-go get https://github.com/shermp/kobo-rclone
+go get github.com/shermp/kobo-rclone
 ```
 
 ### Building Binary
@@ -55,7 +55,7 @@ A script or batch file may be helpful to set these for a terminal session.
 
 To build, run the following command, once the above environment variables have been set.
 ```
-go build path/to/kobo-rclone/krclone.go
+go build go/src/github.com/shermp/kobo-rclone/krclone.go
 ```
 A binary called `krclone` will be copied to the current directory.
 
