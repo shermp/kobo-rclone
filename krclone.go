@@ -78,7 +78,7 @@ func logErrPrint(err error) {
 // fbPrint uses the fbink program to print text on the Kobo screen
 func fbPrint(str string) {
 	fbinkOpts.Row = 4
-	err := gofbink.Print(gofbink.FBFDauto, str, fbinkOpts)
+	_, err := gofbink.Print(gofbink.FBFDauto, str, fbinkOpts)
 	logErrPrint(err)
 }
 
