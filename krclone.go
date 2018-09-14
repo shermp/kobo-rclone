@@ -17,9 +17,11 @@
 package main
 
 import (
+	"container/list"
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io/ioutil"
 	"log"
 	"os"
@@ -30,24 +32,27 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/BurntSushi/toml"
 	linuxproc "github.com/c9s/goprocinfo/linux"
 	_ "github.com/mattn/go-sqlite3"
 	gofbink "github.com/shermp/go-fbink"
 )
 
+// Mountpoints we will be using
 const onboardMnt = "/mnt/onboard/"
 const tmpOnboardMnt = "/mnt/tmponboard/"
+
+// Internal SD card device
 const internalMemoryDev = "/dev/mmcblk0p3"
-const krcloneDir = ".adds/kobo-rclone/"
-const krBookDir = "krclone-books/"
-const nickelHWstatusPipe = "/tmp/nickel-hardware-status"
-const koboDir = ".kobo/"
-const metaLFpath = ".adds/kobo-rclone/krmeta.lock"
+
+const metaLockFile = "krmeta.lock"
 
 const krVersionString = "0.2.0"
 
 // This is easier as a global due to the way FBInk works
 var fbinkOpts gofbink.FBInkConfig
+
+var fbMsgBuffer = list.New()
 
 // BookMetadata is a struct to store data from a Calibre metadata JSON file
 type BookMetadata struct {
@@ -55,6 +60,14 @@ type BookMetadata struct {
 	Series      string  `json:"series"`
 	SeriesIndex float64 `json:"series_index"`
 	Comments    string  `json:"comments"`
+}
+
+// KRcloneConfig is a struct to store the kobo-rclone configuration options
+type KRcloneConfig struct {
+	KRbookDir    string `toml:"krclone_book_dir"`
+	RcloneCfg    string `toml:"rclone_config"`
+	RCremoteName string `toml:"rclone_remote_name"`
+	RCrootDir    string `toml:"rclone_root_dir"`
 }
 
 // chkErrFatal prints a message to the Kobo screen, then exits the program
@@ -77,15 +90,28 @@ func logErrPrint(err error) {
 
 // fbPrint uses the fbink program to print text on the Kobo screen
 func fbPrint(str string) {
-	fbinkOpts.Row = 4
-	_, err := gofbink.Print(gofbink.FBFDauto, str, fbinkOpts)
-	logErrPrint(err)
+	if fbMsgBuffer.Len() >= 5 {
+		elt := fbMsgBuffer.Front()
+		fbMsgBuffer.Remove(elt)
+	}
+	fbMsgBuffer.PushBack(str)
+	fbinkOpts.Col = 1
+	row := int16(4)
+	for m := fbMsgBuffer.Front(); m != nil; m = m.Next() {
+		fbinkOpts.Row = row
+		rowsPrinted, err := gofbink.Print(gofbink.FBFDauto, m.Value.(string), fbinkOpts)
+		if err == nil {
+			row += int16(rowsPrinted)
+		} else {
+			logErrPrint(err)
+		}
+	}
 }
 
 // metadataLockfileExists searches for the existance of a lock file
-func metadataLockfileExists() bool {
+func metadataLockfileExists(krcloneDir string) bool {
 	exists := true
-	if _, err := os.Stat(filepath.Join(onboardMnt, metaLFpath)); os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(krcloneDir, metaLockFile)); os.IsNotExist(err) {
 		exists = false
 	}
 	return exists
@@ -93,6 +119,7 @@ func metadataLockfileExists() bool {
 
 // nickelUSBplug simulates pugging in a USB cable
 func nickelUSBplug() {
+	nickelHWstatusPipe := "/tmp/nickel-hardware-status"
 	nickelPipe, _ := os.OpenFile(nickelHWstatusPipe, os.O_RDWR, os.ModeNamedPipe)
 	nickelPipe.WriteString("usb plug add")
 	nickelPipe.Close()
@@ -100,6 +127,7 @@ func nickelUSBplug() {
 
 // nickelUSBunplug simulates unplugging a USB cable
 func nickelUSBunplug() {
+	nickelHWstatusPipe := "/tmp/nickel-hardware-status"
 	nickelPipe, _ := os.OpenFile(nickelHWstatusPipe, os.O_RDWR, os.ModeNamedPipe)
 	nickelPipe.WriteString("usb plug remove")
 	nickelPipe.Close()
@@ -159,13 +187,12 @@ func fbButtonScan(pressButton bool) error {
 }
 
 // updateMetadata attempts to update the metadata in the Nickel database
-func updateMetadata() {
-	fbPrint("Updating Metadata...")
+func updateMetadata(ksDir, krcloneDir string) {
 	// Make sure we aren't in the directory we will be attempting to mount/unmount
 	os.Chdir("/")
-	os.Remove(filepath.Join(onboardMnt, metaLFpath))
+	os.Remove(filepath.Join(krcloneDir, metaLockFile))
 	// Open and read the metadata into an array of structs
-	calibreMDpath := filepath.Join(onboardMnt, krBookDir, ".metadata.calibre")
+	calibreMDpath := filepath.Join(ksDir, ".metadata.calibre")
 	mdFile, err := os.OpenFile(calibreMDpath, os.O_RDONLY, 0666)
 	if err != nil {
 		fbPrint("Could not open Metadata File... Aborting!")
@@ -180,11 +207,12 @@ func updateMetadata() {
 	json.Unmarshal(mdJSON, &metadata)
 	// Process metadata if it exists
 	if len(metadata) > 0 {
+		fbPrint("Updating Metadata...")
 		nickelUSBplug()
 		for i := 0; i < 10; i++ {
 			err = fbButtonScan(true)
 			if i == 9 && err != nil {
-				fbPrint("Could not press connect button. Aborting!")
+				fbPrint(err.Error())
 				logErrPrint(err)
 				return
 			}
@@ -202,7 +230,7 @@ func updateMetadata() {
 		err = syscall.Mount(internalMemoryDev, tmpOnboardMnt, "vfat", 0, "")
 		if err == nil {
 			// Attempt to open the DB
-			koboDBpath := filepath.Join(tmpOnboardMnt, koboDir, "KoboReader.sqlite")
+			koboDBpath := filepath.Join(tmpOnboardMnt, ".kobo/KoboReader.sqlite")
 			koboDSN := "file:" + koboDBpath + "?cache=shared&mode=rw"
 			db, err := sql.Open("sqlite3", koboDSN)
 			if err != nil {
@@ -243,12 +271,16 @@ func updateMetadata() {
 			fbPrint(err.Error())
 		}
 
+	} else {
+		fbPrint("No metadata to update!")
 	}
 }
 
 // syncBooks runs the rclone program using the preconfigered configuration file.
-func syncBooks(rcBin, rcConf, ksDir string) {
-	rcRemote := "krclone:"
+func syncBooks(rcBin, rcConf, rcRemote, ksDir, krcloneDir string) {
+	if !strings.HasSuffix(rcRemote, ":") {
+		rcRemote += ":"
+	}
 	fbPrint("Starting Sync... Please wait.")
 	syncCmd := exec.Command(rcBin, "sync", rcRemote, ksDir, "--config", rcConf)
 	err := syncCmd.Run()
@@ -258,17 +290,22 @@ func syncBooks(rcBin, rcConf, ksDir string) {
 	}
 	fbPrint("Simulating USB... Please wait.")
 	// Sync has succeeded. We need Nickel to process the new files, so we simulate
-	// a USB connection.
+	// a USB connection. It turns out, 5 seconds may not be nearly long enough. Now
+	// set to approx 60 sec
 	nickelUSBplug()
-	for i := 0; i < 10; i++ {
+	for i := 0; i < 120; i++ {
 		err = fbButtonScan(true)
-		if i == 9 && err != nil {
-			fbPrint("Could not press connect button. Aborting!")
+		if i == 119 && err != nil {
+			fbPrint(err.Error())
 			logErrPrint(err)
 			return
 		}
 		if err == nil {
 			break
+		}
+		if i%2 == 0 {
+			msg := fmt.Sprintf("We've been waiting for %d iterations", i)
+			fbPrint(msg)
 		}
 		time.Sleep(500 * time.Millisecond)
 	}
@@ -277,23 +314,42 @@ func syncBooks(rcBin, rcConf, ksDir string) {
 	fbPrint("Done! Please rerun to update metadata.")
 	waitForMount(30)
 	// Create the lock file to inform our program to get the metadata on next run
-	f, _ := os.Create(filepath.Join(onboardMnt, metaLFpath))
+	f, _ := os.Create(filepath.Join(krcloneDir, metaLockFile))
 	defer f.Close()
 	fbPrint(" ")
 }
 
 func main() {
 	// Init FBInk before use
-	fbinkOpts.IsCentered = true
-	// fbinkOpts.IsQuiet = true
+	fbinkOpts.IsQuiet = true
+	fbinkOpts.Fontmult = 3
 	gofbink.Init(gofbink.FBFDauto, fbinkOpts)
-	rcloneBin := filepath.Join(onboardMnt, krcloneDir, "rclone")
-	rcloneConfig := filepath.Join(onboardMnt, krcloneDir, "rclone.conf")
-	bookdir := filepath.Join(onboardMnt, krBookDir)
-	if metadataLockfileExists() {
-		updateMetadata()
+	// Discover what directory we are running from
+	krcloneDir, err := os.Executable()
+	log.Printf(krcloneDir)
+	chkErrFatal(err, "Could not get current Directory. Aborting!", 5)
+	if !strings.HasPrefix(krcloneDir, onboardMnt) {
+		krcloneDir = filepath.Join(onboardMnt, krcloneDir)
+	}
+	krcloneDir, _ = filepath.Split(krcloneDir)
+	log.Printf(krcloneDir)
+
+	// Read Config file. TOML is used here. Binary size tradeoff not too bad
+	// here.
+	krCfgPath := filepath.Join(krcloneDir, "krclone-cfg.toml")
+	var krCfg KRcloneConfig
+	if _, err := toml.DecodeFile(krCfgPath, &krCfg); err != nil {
+		chkErrFatal(err, "Couldn't read config. Aborting!", 5)
+	}
+
+	// Run kobo-rclone with our configured settings
+	rcloneBin := filepath.Join(krcloneDir, "rclone")
+	rcloneConfig := filepath.Join(krcloneDir, krCfg.RcloneCfg)
+	bookDir := filepath.Join(onboardMnt, krCfg.KRbookDir)
+	if metadataLockfileExists(krcloneDir) {
+		updateMetadata(bookDir, krcloneDir)
 
 	} else {
-		syncBooks(rcloneBin, rcloneConfig, bookdir)
+		syncBooks(rcloneBin, rcloneConfig, krCfg.RCremoteName, bookDir, krcloneDir)
 	}
 }
