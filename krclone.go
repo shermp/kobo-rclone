@@ -22,7 +22,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io/ioutil"
 	"log"
 	"os"
@@ -30,6 +29,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -167,6 +167,28 @@ func fbButtonScan(fb *gofbink.FBInk, pressButton bool) error {
 	return nil
 }
 
+func activitySpinner(quit <-chan bool, mtx *sync.Mutex, fb *gofbink.FBInk, msg string) {
+	spinStates := []string{"( \\ )", "( | )", "( / )", "( - )", "( \\ )", "( | )", "( / )", "( - )"}
+	spinLen := len(spinStates)
+	index := 0
+	fb.Println(" ")
+	for {
+		select {
+		case <-quit:
+			return
+		default:
+			if index >= spinLen {
+				index = 0
+			}
+			mtx.Lock()
+			fb.PrintLastLn(msg, spinStates[index])
+			mtx.Unlock()
+			index++
+			time.Sleep(500 * time.Millisecond)
+		}
+	}
+}
+
 // updateMetadata attempts to update the metadata in the Nickel database
 func updateMetadata(ksDir, krcloneDir string, fb *gofbink.FBInk) {
 	// Make sure we aren't in the directory we will be attempting to mount/unmount
@@ -258,8 +280,12 @@ func syncBooks(rcBin, rcConf, rcRemote, ksDir, krcloneDir string, fb *gofbink.FB
 		rcRemote += ":"
 	}
 	fb.Println("Starting Sync... Please wait.")
+	q := make(chan bool)
+	mtx := &sync.Mutex{}
+	go activitySpinner(q, mtx, fb, "Waiting for Rclone ")
 	syncCmd := exec.Command(rcBin, "sync", rcRemote, ksDir, "--config", rcConf)
 	err := syncCmd.Run()
+	close(q)
 	if err != nil {
 		fb.Println("Sync failed. Aborting!")
 		return
@@ -268,20 +294,23 @@ func syncBooks(rcBin, rcConf, rcRemote, ksDir, krcloneDir string, fb *gofbink.FB
 	// Sync has succeeded. We need Nickel to process the new files, so we simulate
 	// a USB connection. It turns out, 5 seconds may not be nearly long enough. Now
 	// set to approx 60 sec
+	// Note, the mutex is required so we don't accidentally try to perform a button
+	// scan and a print at the same time.
 	nickelUSBplug()
+	q = make(chan bool)
 	for i := 0; i < 120; i++ {
+		mtx.Lock()
 		err = fbButtonScan(fb, true)
+		mtx.Unlock()
 		if i == 119 && err != nil {
+			close(q)
 			fb.Println(err)
 			logErrPrint(err)
 			return
 		}
 		if err == nil {
+			close(q)
 			break
-		}
-		if i%2 == 0 {
-			msg := fmt.Sprintf("We've been waiting for %d iterations", i)
-			fb.Println(msg)
 		}
 		time.Sleep(500 * time.Millisecond)
 	}
