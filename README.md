@@ -10,6 +10,11 @@ It is a CLI program to sync files from a large number of different 'cloud' backe
 kobo-rclone is both a wrapper for the rclone binary to sync ebooks onto a Kobo ereader wirelessly, and a metadata parser/updater, when used in conjunction with Calibre's "Connect to folder" feature. More specifically, kobo-rclone can currently add series information to book entries after a sync.
 
 ## Changelog
+**pre-0.3.0**
+* kobo-rclone now uses a config file to store some settings. It should be called krclone-cfg.toml and placed in the same directory as the krclone binary. An example file is provided in this repository.
+* FBInk handling has changed. Along with that is a new go-fbink-v2 wrapper, which will need to be installed to compile this new version of kobo-rclone
+* Saner error handling.
+
 **0.2.0**
 * Now integrates FBInk as a static library in the binary. No need to download it separately now. Instead, a wrapper called go-fbink has been created.
 * Uses the newly created `fbink_button_scan()` function to detect the Nickel USB connect screen. Additionally, it also handles pressing the button automatically as well. Dumping your own touch event is no longer necessary.
