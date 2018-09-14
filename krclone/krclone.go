@@ -249,8 +249,6 @@ func updateMetadata(ksDir, krcloneDir string, fb *gofbink.FBInk) {
 						_, err := stmt.Exec(description, series, seriesIndex, "%"+path)
 						if err != nil {
 							fb.Println("MD Error")
-						} else {
-							fb.Println("MD Success")
 						}
 					}
 				}
@@ -298,6 +296,7 @@ func syncBooks(rcBin, rcConf, rcRemote, ksDir, krcloneDir string, fb *gofbink.FB
 	// scan and a print at the same time.
 	nickelUSBplug()
 	q = make(chan bool)
+	go activitySpinner(q, mtx, fb, "Waiting for Nickel ")
 	for i := 0; i < 120; i++ {
 		mtx.Lock()
 		err = fbButtonScan(fb, true)
