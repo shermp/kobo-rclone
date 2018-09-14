@@ -1,17 +1,18 @@
-/* 	Copywrite 2018 Sherman Perry
+/*
+Copywrite 2018 Sherman Perry
 
-	This program is free software: you can redistribute it and/or modify
-    it under the terms of the GNU Affero General Public License as published by
-    the Free Software Foundation, either version 3 of the License, or
-    (at your option) any later version.
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
 
-    This program is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-    GNU Affero General Public License for more details.
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU Affero General Public License for more details.
 
-    You should have received a copy of the GNU Affero General Public License
-    along with this program.  If not, see <https://www.gnu.org/licenses/>.
+You should have received a copy of the GNU Affero General Public License
+along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
 package main
@@ -175,11 +176,12 @@ func waitForMount(approxTimeout int) error {
 func fbButtonScan(pressButton bool) error {
 	err := gofbink.ButtonScan(gofbink.FBFDauto, pressButton, false)
 	if err != nil {
-		if strings.Compare(err.Error(), "EXIT_FAILURE") == 0 {
+		switch err.Error() {
+		case "EXIT_FAILURE":
 			return errors.New("button not found")
-		} else if strings.Compare(err.Error(), "ENOTSUP") == 0 {
+		case "ENOTSUP":
 			return errors.New("button press failure")
-		} else if strings.Compare(err.Error(), "ENODEV") == 0 {
+		case "ENODEV":
 			return errors.New("touch event failure")
 		}
 	}
@@ -193,16 +195,11 @@ func updateMetadata(ksDir, krcloneDir string) {
 	os.Remove(filepath.Join(krcloneDir, metaLockFile))
 	// Open and read the metadata into an array of structs
 	calibreMDpath := filepath.Join(ksDir, ".metadata.calibre")
-	mdFile, err := os.OpenFile(calibreMDpath, os.O_RDONLY, 0666)
+	mdJSON, err := ioutil.ReadFile(calibreMDpath)
 	if err != nil {
 		fbPrint("Could not open Metadata File... Aborting!")
-		if mdFile != nil {
-			mdFile.Close()
-		}
 		return
 	}
-	mdJSON, _ := ioutil.ReadAll(mdFile)
-	mdFile.Close()
 	var metadata []BookMetadata
 	json.Unmarshal(mdJSON, &metadata)
 	// Process metadata if it exists
