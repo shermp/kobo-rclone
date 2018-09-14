@@ -30,22 +30,18 @@ kobo-rclone is NOT yet suitable for everyday use, therefore no binaries are avai
 Install the Go distribution for your platform. See https://golang.org/doc/install for documentation.
 
 ### Install dependencies
-kobo-rclone uses the `go-sqlite3` package to interface with the Kobo DB. Unfortunately, this require `CGO` support. First, install `go-sqlite3` with
-```
-go get github.com/mattn/go-sqlite3
-```
-You will need an ARM GCC cross compiler available to build kobo-rclone correctly with `go-sqlite3`. `gcc-linaro-arm-linux-gnueabihf-4.8-2013.04-20130417` has been used successfully. Extract it to a directory of your choosing, and set the `CC` and `CXX` environment variables to `path/to/gcc` and `path/to/g++` respectively.
+Some dependencies of kobo-rclone require the use of CGO. Therefore, an ARM GCC cross compiler is necessary.
 
-kobo-rclone now uses a wrapper called `go-fbink` to use FBInk. Install it with:
-```
-go get github.com/shermp/go-fbink
-```
+I highly recommed building kobo-rclone on Linux using the Koreader toolchain found at `https://github.com/koreader/koxtoolchain`. A fair warning that this could take over 40 minutes to install however, although it is entirely automated.
+
+If building in Windows, `gcc-linaro-arm-linux-gnueabihf-4.8-2013.04-20130417` has been used successfully. Simply extract it to a directory of your choosing.
 
 ### Obtain kobo-rclone
 kobo-rclone can be downloaded using `go get`
 ```
-go get github.com/shermp/kobo-rclone
+go get github.com/shermp/kobo-rclone/krclone
 ```
+This should install all necessary dependencies.
 
 ### Building Binary
 The following environment variables need to be set to compile kobo-rclone
@@ -53,20 +49,21 @@ The following environment variables need to be set to compile kobo-rclone
 GOOS=linux
 GOARCH=arm
 CGO_ENABLED=1
+# The following are example paths. Replace with the paths to your installed cross compiler
 CC=path/to/gcc
 CXX=path/to/g++
 ```
-A script or batch file may be helpful to set these for a terminal session.
+A shell script or batch file may be helpful to set these for a terminal session.
 
 To build, run the following command, once the above environment variables have been set.
 ```
-go build go/src/github.com/shermp/kobo-rclone/krclone.go
+go build go/src/github.com/shermp/kobo-rclone/krclone
 ```
 A binary called `krclone` will be copied to the current directory.
 
 Note that fbink is now included as a static library, and should now be included in the main binary after this step.
 
-You may also wish to strip the binary using `path/to/toolchain/toolchain-strip krclone`, where toolchain is the name of your chosen cross compiler.
+You may also wish to strip the binary using `path/to/toolchain/toolchain-strip krclone`, where toolchain is the name of your chosen cross compiler. The stripped binary will be approx 50%-60% the size of the original binary.
 
 ### Obtaining rclone
 Rclone is available as an ARM binary. Visit the download page https://rclone.org/downloads/ and download the Linux, ARM 32-bit distribution from the table.
@@ -76,14 +73,16 @@ Currently, telnet or SSH access to a Kobo device is almost mandatory.
 
 On the main memory of your Kobo (`/mnt/onboard`), create the directory `.adds/kobo-rclone`
 
-Copy the `rclone` and `krclone` binaries to the `kobo-rclone` directory on the Kobo.
+Copy the `rclone` and `krclone` binaries to the `kobo-rclone` directory on the Kobo. Also copy the included `krclone-cfg.toml` to this directory.
 
-Rclone require a configuration file. kobo-rclone is configured to use `rclone.conf` in the `kobo-rclone` directory. This file may be generated on the Kobo, or your development PC. To generate on the Kobo:
+Rclone require a configuration file. By default, kobo-rclone is configured to use `rclone.conf` in the `kobo-rclone` directory. This file may be generated on the Kobo, or your development PC. To generate on the Kobo:
 ```
 # cd /mnt/onboard/.adds/kobo-rclone
 # ./rclone config --config "./rclone.conf"
 ```
-follow the interactive prompts for your cloud provider. I have currently tested with SFTP. Note kobo-rclone is currently configured to use the root of whatever 'cloud' directory you set up. This could be made configurable later.
+follow the interactive prompts for your cloud provider. I have currently tested with SFTP. Note, by default kobo-rclone is configured to use the root of whatever 'cloud' directory you set up.
+
+To alter some default configurations, feel free to modify the `krclone-cfg.toml`, according to the instructions in the file.
 
 ## Runing kobo-rclone
 Running kobo-rclone is currently a simple affair. From telnet/SSH:
@@ -94,7 +93,7 @@ Running kobo-rclone is currently a simple affair. From telnet/SSH:
 // wait for sync, then for Nickel to process files, if any
 // run again to process any metadata, such as updating series info.
 ```
-Synced books are stored in `/mnt/onboard/krclone-books`
+Synced books are stored in `/mnt/onboard/krclone-books` by default. You may change this in the config file.
 
 It is higly recommended to use Calibre's "Connect to folder" option to "connect" to your sync directory on your PC. This transferrs the `.metadata.calibre` file used by kobo-rclone to populate the series entry in the Kobo DB. It is also recommended to disable unsupported filetypes in the "connect to folder" settings.
 
