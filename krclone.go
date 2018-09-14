@@ -36,7 +36,7 @@ import (
 	"github.com/BurntSushi/toml"
 	linuxproc "github.com/c9s/goprocinfo/linux"
 	_ "github.com/mattn/go-sqlite3"
-	gofbink "github.com/shermp/go-fbink"
+	"github.com/shermp/go-fbink-v2/gofbink"
 )
 
 // Mountpoints we will be using
@@ -75,7 +75,6 @@ type KRcloneConfig struct {
 func chkErrFatal(err error, usrMsg string, msgDuration int) {
 	if err != nil {
 		if usrMsg != "" {
-			fbPrint(usrMsg)
 			time.Sleep(time.Duration(msgDuration) * time.Second)
 		}
 		log.Fatal(err)
@@ -86,26 +85,6 @@ func chkErrFatal(err error, usrMsg string, msgDuration int) {
 func logErrPrint(err error) {
 	if err != nil {
 		log.Print(err)
-	}
-}
-
-// fbPrint uses the fbink program to print text on the Kobo screen
-func fbPrint(str string) {
-	if fbMsgBuffer.Len() >= 5 {
-		elt := fbMsgBuffer.Front()
-		fbMsgBuffer.Remove(elt)
-	}
-	fbMsgBuffer.PushBack(str)
-	fbinkOpts.Col = 1
-	row := int16(4)
-	for m := fbMsgBuffer.Front(); m != nil; m = m.Next() {
-		fbinkOpts.Row = row
-		rowsPrinted, err := gofbink.Print(gofbink.FBFDauto, m.Value.(string), fbinkOpts)
-		if err == nil {
-			row += int16(rowsPrinted)
-		} else {
-			logErrPrint(err)
-		}
 	}
 }
 
@@ -173,8 +152,8 @@ func waitForMount(approxTimeout int) error {
 //
 // It replays events captured by /dev/input/event1, which are stored in a model specific
 // file.
-func fbButtonScan(pressButton bool) error {
-	err := gofbink.ButtonScan(gofbink.FBFDauto, pressButton, false)
+func fbButtonScan(fb *gofbink.FBInk, pressButton bool) error {
+	err := fb.ButtonScan(pressButton, false)
 	if err != nil {
 		switch err.Error() {
 		case "EXIT_FAILURE":
@@ -189,7 +168,7 @@ func fbButtonScan(pressButton bool) error {
 }
 
 // updateMetadata attempts to update the metadata in the Nickel database
-func updateMetadata(ksDir, krcloneDir string) {
+func updateMetadata(ksDir, krcloneDir string, fb *gofbink.FBInk) {
 	// Make sure we aren't in the directory we will be attempting to mount/unmount
 	os.Chdir("/")
 	os.Remove(filepath.Join(krcloneDir, metaLockFile))
@@ -197,19 +176,19 @@ func updateMetadata(ksDir, krcloneDir string) {
 	calibreMDpath := filepath.Join(ksDir, ".metadata.calibre")
 	mdJSON, err := ioutil.ReadFile(calibreMDpath)
 	if err != nil {
-		fbPrint("Could not open Metadata File... Aborting!")
+		fb.Println("Could not open Metadata File... Aborting!")
 		return
 	}
 	var metadata []BookMetadata
 	json.Unmarshal(mdJSON, &metadata)
 	// Process metadata if it exists
 	if len(metadata) > 0 {
-		fbPrint("Updating Metadata...")
+		fb.Println("Updating Metadata...")
 		nickelUSBplug()
 		for i := 0; i < 10; i++ {
-			err = fbButtonScan(true)
+			err = fbButtonScan(fb, true)
 			if i == 9 && err != nil {
-				fbPrint(err.Error())
+				fb.Println(err)
 				logErrPrint(err)
 				return
 			}
@@ -231,7 +210,7 @@ func updateMetadata(ksDir, krcloneDir string) {
 			koboDSN := "file:" + koboDBpath + "?cache=shared&mode=rw"
 			db, err := sql.Open("sqlite3", koboDSN)
 			if err != nil {
-				fbPrint(err.Error())
+				fb.Println(err)
 				return
 			}
 			// Create a prepared statement we can reuse
@@ -247,14 +226,14 @@ func updateMetadata(ksDir, krcloneDir string) {
 					if path != "" {
 						_, err := stmt.Exec(description, series, seriesIndex, "%"+path)
 						if err != nil {
-							fbPrint("MD Error")
+							fb.Println("MD Error")
 						} else {
-							fbPrint("MD Success")
+							fb.Println("MD Success")
 						}
 					}
 				}
 			} else {
-				fbPrint(err.Error())
+				fb.Println(err)
 			}
 			db.Close()
 			// We're done. Better unmount the filesystem before we return control to Nickel
@@ -263,37 +242,37 @@ func updateMetadata(ksDir, krcloneDir string) {
 			err = waitForUnmount(10)
 			chkErrFatal(err, "The Filesystem did not unmount. Aborting!", 5)
 			nickelUSBunplug()
-			fbPrint("Metadata updated!")
+			fb.Println("Metadata updated!")
 		} else {
-			fbPrint(err.Error())
+			fb.Println(err)
 		}
 
 	} else {
-		fbPrint("No metadata to update!")
+		fb.Println("No metadata to update!")
 	}
 }
 
 // syncBooks runs the rclone program using the preconfigered configuration file.
-func syncBooks(rcBin, rcConf, rcRemote, ksDir, krcloneDir string) {
+func syncBooks(rcBin, rcConf, rcRemote, ksDir, krcloneDir string, fb *gofbink.FBInk) {
 	if !strings.HasSuffix(rcRemote, ":") {
 		rcRemote += ":"
 	}
-	fbPrint("Starting Sync... Please wait.")
+	fb.Println("Starting Sync... Please wait.")
 	syncCmd := exec.Command(rcBin, "sync", rcRemote, ksDir, "--config", rcConf)
 	err := syncCmd.Run()
 	if err != nil {
-		fbPrint("Sync failed. Aborting!")
+		fb.Println("Sync failed. Aborting!")
 		return
 	}
-	fbPrint("Simulating USB... Please wait.")
+	fb.Println("Simulating USB... Please wait.")
 	// Sync has succeeded. We need Nickel to process the new files, so we simulate
 	// a USB connection. It turns out, 5 seconds may not be nearly long enough. Now
 	// set to approx 60 sec
 	nickelUSBplug()
 	for i := 0; i < 120; i++ {
-		err = fbButtonScan(true)
+		err = fbButtonScan(fb, true)
 		if i == 119 && err != nil {
-			fbPrint(err.Error())
+			fb.Println(err)
 			logErrPrint(err)
 			return
 		}
@@ -302,25 +281,28 @@ func syncBooks(rcBin, rcConf, rcRemote, ksDir, krcloneDir string) {
 		}
 		if i%2 == 0 {
 			msg := fmt.Sprintf("We've been waiting for %d iterations", i)
-			fbPrint(msg)
+			fb.Println(msg)
 		}
 		time.Sleep(500 * time.Millisecond)
 	}
 	time.Sleep(5 * time.Second)
 	nickelUSBunplug()
-	fbPrint("Done! Please rerun to update metadata.")
+	fb.Println("Done! Please rerun to update metadata.")
 	waitForMount(30)
 	// Create the lock file to inform our program to get the metadata on next run
 	f, _ := os.Create(filepath.Join(krcloneDir, metaLockFile))
 	defer f.Close()
-	fbPrint(" ")
+	fb.Println(" ")
 }
 
 func main() {
 	// Init FBInk before use
-	fbinkOpts.IsQuiet = true
-	fbinkOpts.Fontmult = 3
-	gofbink.Init(gofbink.FBFDauto, fbinkOpts)
+	cfg := gofbink.FBInkConfig{}
+	rCfg := gofbink.RestrictedConfig{Fontname: gofbink.IBM, Fontmult: 3}
+	fb := gofbink.New(&cfg, &rCfg)
+	fb.Open()
+	defer fb.Close()
+	fb.Init(&cfg)
 	// Discover what directory we are running from
 	krcloneDir, err := os.Executable()
 	log.Printf(krcloneDir)
@@ -344,9 +326,9 @@ func main() {
 	rcloneConfig := filepath.Join(krcloneDir, krCfg.RcloneCfg)
 	bookDir := filepath.Join(onboardMnt, krCfg.KRbookDir)
 	if metadataLockfileExists(krcloneDir) {
-		updateMetadata(bookDir, krcloneDir)
+		updateMetadata(bookDir, krcloneDir, fb)
 
 	} else {
-		syncBooks(rcloneBin, rcloneConfig, krCfg.RCremoteName, bookDir, krcloneDir)
+		syncBooks(rcloneBin, rcloneConfig, krCfg.RCremoteName, bookDir, krcloneDir, fb)
 	}
 }
