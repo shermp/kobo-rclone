@@ -142,11 +142,8 @@ func waitForMount(approxTimeout int) error {
 	return errors.New("internal memory did not mount")
 }
 
-// fbButtonScan simulates pressing the touch screen to 'press' the 'connect' button
-// when 'plugging in' the usb cable.
-//
-// It replays events captured by /dev/input/event1, which are stored in a model specific
-// file.
+// fbButtonScan uses FBInk to scan for the USB connect button,
+// and when found, simulates the touch event needed to press it
 func fbButtonScan(fb *gofbink.FBInk, pressButton bool) error {
 	err := fb.ButtonScan(pressButton, false)
 	if err != nil {
