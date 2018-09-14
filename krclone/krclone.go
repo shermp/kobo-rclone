@@ -357,7 +357,6 @@ func main() {
 		krcloneDir = filepath.Join(onboardMnt, krcloneDir)
 	}
 	krcloneDir, _ = filepath.Split(krcloneDir)
-	log.Printf(krcloneDir)
 
 	// Read Config file. TOML is used here. Binary size tradeoff not too bad
 	krCfgPath := filepath.Join(krcloneDir, "krclone-cfg.toml")
